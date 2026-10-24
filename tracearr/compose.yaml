@@ -1,0 +1,90 @@
+name: tracearr
+services:
+  tracearr:
+    image: ghcr.io/connorgallopo/tracearr:3.1.1@sha256:d0fe66480953c51da9bf82c3909799e80a4d24165962c747e756be31fcd0fb8f
+    container_name: tracearr
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      TZ: ${TZ:-Europe/Brussels}
+      DATABASE_URL: postgres://tracearr:${DB_PASSWORD:?Définir DB_PASSWORD (hexadécimal)}@timescale:5432/tracearr
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Définir JWT_SECRET (64 caractères hexadécimaux)}
+      COOKIE_SECRET: ${COOKIE_SECRET:?Définir COOKIE_SECRET (64 caractères hexadécimaux)}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Définir BETTER_AUTH_SECRET (64 caractères hexadécimaux)}
+      CORS_ORIGIN: https://${TRACEARR_HOST:?Définir TRACEARR_HOST}
+      # Faire confiance uniquement aux IP/CIDR explicites des proxys.
+      TRUST_PROXY: ${TRUST_PROXY:?Définir les IP/CIDR de Traefik et BunkerWeb vus dans la chaîne proxy}
+      LOG_LEVEL: info
+    depends_on:
+      timescale:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - tracearr-backups:/data/backup
+      - tracearr-images:/data/tracearr/image-cache
+    networks:
+      - traefik
+      - backend
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik"
+      traefik.http.routers.tracearr.rule: "Host(`${TRACEARR_HOST:?Définir TRACEARR_HOST dans .env ou Komodo}`)"
+      traefik.http.routers.tracearr.entrypoints: "websecure"
+      traefik.http.routers.tracearr.tls: "true"
+      traefik.http.routers.tracearr.tls.certresolver: "letsencrypt"
+      traefik.http.routers.tracearr.service: "tracearr"
+      traefik.http.services.tracearr.loadbalancer.server.port: "3000"
+
+  timescale:
+    image: timescale/timescaledb-ha:pg18.4-ts2.29.1@sha256:26a7598a17939878a388864a8faea56f4b90558163b28cfa0e73600091689c82
+    restart: unless-stopped
+    shm_size: 512mb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    command: postgres -c timescaledb.license=timescale -c timescaledb.max_tuples_decompressed_per_dml_transaction=100000 -c max_locks_per_transaction=4096 -c timescaledb.telemetry_level=off -c max_connections=150
+    environment:
+      POSTGRES_USER: tracearr
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Définir DB_PASSWORD (hexadécimal)}
+      POSTGRES_DB: tracearr
+    volumes:
+      - timescale-data:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "tracearr", "-d", "tracearr"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  redis:
+    image: redis:8.10.2-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+networks:
+  traefik:
+    name: traefik
+    external: true
+  backend:
+    internal: true
+
+volumes:
+  tracearr-backups:
+  tracearr-images:
+  timescale-data:
+  redis-data:
