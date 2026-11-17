@@ -1,0 +1,43 @@
+name: seerr
+services:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:v3.5.1@sha256:d8fab675b55ad293ded98fd71efcfd46054cbad9746534ae1cc4794a88c0b3be
+    container_name: seerr
+    init: true
+    restart: unless-stopped
+    # Conserver l'utilisateur node de l'image ; le volume reprend ses droits.
+    environment:
+      TZ: ${TZ:-Europe/Brussels}
+      LOG_LEVEL: info
+      PORT: "5055"
+    volumes:
+      - seerr-config:/app/config
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5055/api/v1/settings/public"]
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - traefik
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik"
+      traefik.http.routers.seerr.rule: "Host(`${SEERR_HOST:?Définir SEERR_HOST dans .env ou Komodo}`)"
+      traefik.http.routers.seerr.entrypoints: "websecure"
+      traefik.http.routers.seerr.tls: "true"
+      traefik.http.routers.seerr.tls.certresolver: "letsencrypt"
+      traefik.http.routers.seerr.service: "seerr"
+      traefik.http.services.seerr.loadbalancer.server.port: "5055"
+
+networks:
+  traefik:
+    name: traefik
+    external: true
+
+volumes:
+  seerr-config:

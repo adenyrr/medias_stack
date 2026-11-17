@@ -1,0 +1,81 @@
+name: torrents
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls484@sha256:e887804fa9de4c60f5f0fb1f3a7e4febe40a8f69fe736f70c4e8589b1f868dab
+    container_name: qbittorrent
+    restart: unless-stopped
+    environment:
+      # UID/GID 0 du conteneur = compte deploy sur l'hôte rootless.
+      PUID: "0"
+      PGID: "0"
+      TZ: ${TZ:-Europe/Brussels}
+      WEBUI_PORT: "8080"
+      TORRENTING_PORT: "6881"
+    volumes:
+      - type: bind
+        source: ${QBITTORRENT_CONFIG:?Définir le chemin absolu de la configuration existante}
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MEDIAS:?Définir le chemin absolu des médias partagés}
+        target: /downloads
+        bind:
+          create_host_path: false
+    # Uniquement les échanges BitTorrent ; l'interface web passe par Traefik.
+    ports:
+      - "6881:6881/tcp"
+      - "6881:6881/udp"
+    networks:
+      - traefik
+      - torrents
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik"
+      traefik.http.routers.qbittorrent.rule: "Host(`${QBITTORRENT_HOST:?Définir QBITTORRENT_HOST dans .env ou Komodo}`)"
+      traefik.http.routers.qbittorrent.entrypoints: "websecure"
+      traefik.http.routers.qbittorrent.tls: "true"
+      traefik.http.routers.qbittorrent.tls.certresolver: "letsencrypt"
+      traefik.http.routers.qbittorrent.service: "qbittorrent"
+      traefik.http.services.qbittorrent.loadbalancer.server.port: "8080"
+
+  qui:
+    image: ghcr.io/autobrr/qui:v1.33.1@sha256:c83ce0370ab372c931ccb3f0ddd0eb1bc850026ce9eafc13ce94443f6f2a2cd3
+    container_name: qui
+    user: "0:0"
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Europe/Brussels}
+      QUI__HOST: "0.0.0.0"
+      QUI__PORT: "7476"
+      QUI__SESSION_COOKIE_SECURE: "true"
+    volumes:
+      - type: bind
+        source: ${QUI_CONFIG:?Définir le chemin absolu de la configuration existante}
+        target: /config
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${MEDIAS:?Définir le chemin absolu des médias partagés}
+        target: /downloads
+        bind:
+          create_host_path: false
+    networks:
+      - traefik
+      - torrents
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: "traefik"
+      traefik.http.routers.qui.rule: "Host(`${QUI_HOST:?Définir QUI_HOST dans .env ou Komodo}`)"
+      traefik.http.routers.qui.entrypoints: "websecure"
+      traefik.http.routers.qui.tls: "true"
+      traefik.http.routers.qui.tls.certresolver: "letsencrypt"
+      traefik.http.routers.qui.service: "qui"
+      traefik.http.services.qui.loadbalancer.server.port: "7476"
+
+networks:
+  traefik:
+    name: traefik
+    external: true
+  torrents:
+    driver: bridge
