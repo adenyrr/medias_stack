@@ -1,0 +1,78 @@
+# A inclure depuis .gitlab-ci.yml ; ajouter le stage renovate apres les tests.
+# Digests OCI verifies dans le registre public le 2026-11-14.
+compose-image-policy:
+  stage: validate
+  rules:
+    - when: on_success
+  image: python:3.13.18-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+  before_script:
+    - python -m pip install --disable-pip-version-check --no-cache-dir PyYAML==6.0.3
+  script:
+    - |
+      python - <<'PY'
+      import pathlib, re, yaml
+      errors, count = [], 0
+      pattern = re.compile(r"(?:docker-)?compose[^/]*\.ya?ml$")
+      for path in sorted(pathlib.Path('.').rglob('*')):
+          if '.git' in path.parts or not path.is_file() or not pattern.fullmatch(path.name):
+              continue
+          doc = yaml.safe_load(path.read_text()) or {}
+          assert isinstance(doc, dict), f'{path}: document YAML non mapping'
+          for name, service in (doc.get('services') or {}).items():
+              if not isinstance(service, dict) or 'image' not in service:
+                  continue  # Les overrides peuvent ne definir que des labels.
+              count += 1
+              image = service['image']
+              if not isinstance(image, str):
+                  errors.append(f'{path}: {name}: image non textuelle')
+                  continue
+              default = re.fullmatch(r'\$\{[A-Z0-9_]+:-([^}]+)\}', image)
+              image = default.group(1) if default else image
+              if not re.fullmatch(r'[^\s@]+:[^\s/@:]+@sha256:[a-f0-9]{64}', image):
+                  errors.append(f'{path}: {name}: version + SHA256 obligatoires')
+              elif not (re.search(r':v?\d+\.\d+\.\d+(?:[-+][^@]+)?@', image) or re.match(r'postgres:\d{2,}\.\d+(?:[-+][^@]+)?@', image)):
+                  print(f'AVERTISSEMENT: {path}: {name}: tag non SemVer complet, revue manuelle')
+      assert count, 'Aucune image Compose trouvee'
+      if errors:
+          raise SystemExit('\n'.join(errors))
+      print(f'OK: YAML et epinglage de {count} references Compose (pas un test runtime)')
+      PY
+
+renovate-config-check:
+  stage: validate
+  rules:
+    - when: on_success
+  image:
+    name: renovate/renovate:44.239.1@sha256:7dba1a3b916a2cf302ba0df458ddcc8fcbac3c92d0fe9882ac13ba0363de656b
+    entrypoint: [""]
+  script:
+    - renovate-config-validator --strict renovate.json
+
+renovate:
+  stage: renovate
+  image:
+    name: renovate/renovate:44.239.1@sha256:7dba1a3b916a2cf302ba0df458ddcc8fcbac3c92d0fe9882ac13ba0363de656b
+    entrypoint: [""]
+  resource_group: renovate
+  timeout: 1h
+  variables:
+    LOG_LEVEL: info
+    RENOVATE_PLATFORM: gitlab
+    RENOVATE_ONBOARDING: "false"
+    RENOVATE_REQUIRE_CONFIG: required
+    RENOVATE_AUTODISCOVER: "false"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "web"'
+      when: manual
+    - when: never
+  script:
+    - |
+      test -n "$RENOVATE_TOKEN" || { echo 'Variable protegee RENOVATE_TOKEN manquante'; exit 1; }
+      if [ -n "${RENOVATE_CA_BUNDLE:-}" ]; then
+        test -r "$RENOVATE_CA_BUNDLE"
+        export NODE_EXTRA_CA_CERTS="$RENOVATE_CA_BUNDLE"
+        export GIT_SSL_CAINFO="$RENOVATE_CA_BUNDLE"
+      fi
+      export RENOVATE_ENDPOINT="$CI_API_V4_URL"
+      renovate "$CI_PROJECT_PATH"

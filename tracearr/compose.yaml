@@ -1,9 +1,18 @@
 name: tracearr
+
+x-defaults: &defaults
+  restart: unless-stopped
+  security_opt: [no-new-privileges:true]
+  logging:
+    driver: local
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   tracearr:
+    <<: *defaults
     image: ghcr.io/connorgallopo/tracearr:3.1.1@sha256:d0fe66480953c51da9bf82c3909799e80a4d24165962c747e756be31fcd0fb8f
-    container_name: tracearr
-    restart: unless-stopped
     environment:
       NODE_ENV: production
       HOST: "0.0.0.0"
@@ -24,36 +33,45 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - tracearr-backups:/data/backup
-      - tracearr-images:/data/tracearr/image-cache
+      - type: volume
+        source: tracearr-backups
+        target: /data/backup
+        read_only: false
+      - type: volume
+        source: tracearr-images
+        target: /data/tracearr/image-cache
+        read_only: false
     networks:
       - traefik
       - backend
     labels:
       traefik.enable: "true"
-      traefik.docker.network: "traefik"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik-net}
       traefik.http.routers.tracearr.rule: "Host(`${TRACEARR_HOST:?Définir TRACEARR_HOST dans .env ou Komodo}`)"
-      traefik.http.routers.tracearr.entrypoints: "websecure"
+      traefik.http.routers.tracearr.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.tracearr.tls: "true"
-      traefik.http.routers.tracearr.tls.certresolver: "letsencrypt"
+      traefik.http.routers.tracearr.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-pki}
       traefik.http.routers.tracearr.service: "tracearr"
       traefik.http.services.tracearr.loadbalancer.server.port: "3000"
 
   timescale:
+    <<: *defaults
     image: timescale/timescaledb-ha:pg18.4-ts2.29.1@sha256:26a7598a17939878a388864a8faea56f4b90558163b28cfa0e73600091689c82
-    restart: unless-stopped
     shm_size: 512mb
     ulimits:
       nofile:
         soft: 65536
         hard: 65536
-    command: postgres -c timescaledb.license=timescale -c timescaledb.max_tuples_decompressed_per_dml_transaction=100000 -c max_locks_per_transaction=4096 -c timescaledb.telemetry_level=off -c max_connections=150
+    command: ["postgres", "-c", "timescaledb.license=timescale", "-c", "timescaledb.max_tuples_decompressed_per_dml_transaction=100000", "-c", "max_locks_per_transaction=4096", "-c", "timescaledb.telemetry_level=off", "-c", "max_connections=150"]
     environment:
       POSTGRES_USER: tracearr
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Définir DB_PASSWORD (hexadécimal)}
       POSTGRES_DB: tracearr
     volumes:
-      - timescale-data:/home/postgres/pgdata/data
+      - type: volume
+        source: timescale-data
+        target: /home/postgres/pgdata/data
+        read_only: false
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "tracearr", "-d", "tracearr"]
       interval: 10s
@@ -63,11 +81,14 @@ services:
       - backend
 
   redis:
+    <<: *defaults
     image: redis:8.10.2-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
-    restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
-      - redis-data:/data
+      - type: volume
+        source: redis-data
+        target: /data
+        read_only: false
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -78,13 +99,21 @@ services:
 
 networks:
   traefik:
-    name: traefik
+    name: ${TRAEFIK_NETWORK:-traefik-net}
     external: true
   backend:
     internal: true
 
 volumes:
   tracearr-backups:
+    external: true
+    name: ${TRACEARR_BACKUPS_VOLUME:?Nom exact du volume de production existant requis}
   tracearr-images:
+    external: true
+    name: ${TRACEARR_IMAGES_VOLUME:?Nom exact du volume de production existant requis}
   timescale-data:
+    external: true
+    name: ${TIMESCALE_DATA_VOLUME:?Nom exact du volume PostgreSQL existant requis}
   redis-data:
+    external: true
+    name: ${REDIS_DATA_VOLUME:?Nom exact du volume Redis existant requis}

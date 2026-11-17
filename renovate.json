@@ -1,0 +1,70 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "enabledManagers": ["docker-compose", "gitlabci", "custom.regex"],
+  "dependencyDashboard": {"enabled": true},
+  "pinDigests": true,
+  "automerge": false,
+  "automergeType": "pr",
+  "platformAutomerge": false,
+  "ignoreTests": false,
+  "separateMajorMinor": true,
+  "separateMinorPatch": true,
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "gitlabci": {
+    "managerFilePatterns": ["/(^|/)\\.gitlab/.*\\.gitlab-ci\\.ya?ml$/"]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)(?:docker-)?compose[^/]*\\.ya?ml$/"],
+      "matchStrings": ["image:\\s*\\$\\{[A-Z0-9_]+:-(?<depName>[a-zA-Z0-9./_-]+):(?<currentValue>[^\\s@}]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\\}"],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/(^|/)(?:docker-)?compose[^/]*\\.ya?ml$/"],
+      "matchStrings": ["x-[a-zA-Z0-9_-]*image:\\s*&[a-zA-Z0-9_-]+\\s+(?<depName>[a-zA-Z0-9./_-]+):(?<currentValue>[^\\s@]+)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?"],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Versions stables et SHA : fusion par Renovate apres CI verte",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Majeures et premiers epinglages : confirmation humaine",
+      "matchUpdateTypes": ["major", "pin", "pinDigest", "replacement"],
+      "automerge": false
+    },
+    {
+      "description": "Un tag incomplet ou flottant peut masquer une majeure",
+      "matchDatasources": ["docker"],
+      "matchCurrentValue": "!/^v?\\d+\\.\\d+\\.\\d+(?:[-+].*)?$/",
+      "automerge": false
+    },
+    {
+      "description": "PostgreSQL >=10 publie des versions completes a deux nombres",
+      "matchPackageNames": ["postgres", "docker.io/library/postgres"],
+      "matchCurrentValue": "/^\\d{2,}\\.\\d+(?:[-+].*)?$/",
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Les mineures pre-1.0 peuvent etre incompatibles",
+      "matchCurrentVersion": "/^v?0\\./",
+      "matchUpdateTypes": ["minor"],
+      "automerge": false
+    },
+    {
+      "description": "Hermes : revoir aussi la generation du volume source",
+      "matchPackageNames": ["nousresearch/hermes-agent"],
+      "automerge": false
+    }
+  ]
+}

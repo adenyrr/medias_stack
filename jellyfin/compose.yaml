@@ -2,32 +2,52 @@ name: jellyfin
 services:
   jellyfin:
     image: jellyfin/jellyfin:12.3@sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5
-    container_name: jellyfin
     user: "0:0"
     runtime: nvidia
     networks:
       - traefik
     labels:
       traefik.enable: "true"
-      traefik.docker.network: "traefik"
-      traefik.http.routers.jellyfin.rule: "Host(`${JELLYFIN_HOST}`)"
-      traefik.http.routers.jellyfin.entrypoints: "websecure"
+      traefik.docker.network: ${TRAEFIK_NETWORK:-traefik-net}
+      traefik.http.routers.jellyfin.rule: "Host(`${JELLYFIN_HOST:?Définir JELLYFIN_HOST dans Komodo}`)"
+      traefik.http.routers.jellyfin.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
       traefik.http.routers.jellyfin.tls: "true"
-      traefik.http.routers.jellyfin.tls.certresolver: "letsencrypt"
+      traefik.http.routers.jellyfin.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-pki}
       traefik.http.routers.jellyfin.service: "jellyfin"
       traefik.http.services.jellyfin.loadbalancer.server.port: "8096"
     environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility
     volumes:
-      - jellyfin-cache:/cache
-      - jellyfin-config:/config
+      - type: volume
+        source: jellyfin-cache
+        target: /cache
+        read_only: false
+      - type: volume
+        source: jellyfin-config
+        target: /config
+        read_only: false
       - type: bind
-        source: ${MEDIAS_DIR}
+        source: ${MEDIAS_DIR:?Conserver le chemin absolu des médias existants}
         target: /media
+        # Conserver suppression de médias, sous-titres et métadonnées selon les réglages.
+        read_only: false
         bind:
           create_host_path: false
     restart: 'unless-stopped'
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # curl est présent dans l'image ; pas de -k hérité de sa sonde par défaut.
+    healthcheck:
+      test: ["CMD", "curl", "--noproxy", "localhost", "--fail", "--silent", "--show-error", "http://localhost:8096/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     deploy:
       resources:
         reservations:
@@ -37,11 +57,13 @@ services:
               capabilities: [gpu]
 networks:
   traefik:
-    name: traefik
+    name: ${TRAEFIK_NETWORK:-traefik-net}
     external: true
 
 volumes:
   jellyfin-cache:
-    driver: local
+    external: true
+    name: ${JELLYFIN_CACHE_VOLUME:?Nom exact du volume cache existant requis}
   jellyfin-config:
-    driver: local
+    external: true
+    name: ${JELLYFIN_CONFIG_VOLUME:?Nom exact du volume config existant requis}

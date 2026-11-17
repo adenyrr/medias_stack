@@ -1,0 +1,14 @@
+# Tests propres aux medias : ne pas modifier le socle Renovate commun.
+stack-tests:
+  stage: validate
+  rules:
+    - when: on_success
+  image: python:3.13.18-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+  variables:
+    # Les tests de non-regression comparent les montages au commit source.
+    GIT_DEPTH: "0"
+  before_script:
+    - apk add --no-cache git
+    - python -m pip install --disable-pip-version-check --no-cache-dir PyYAML==6.0.3
+  script:
+    - python -m unittest discover -s tests -v
