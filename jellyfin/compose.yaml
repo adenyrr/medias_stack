@@ -10,9 +10,9 @@ services:
       traefik.enable: "true"
       traefik.docker.network: ${TRAEFIK_NETWORK:-traefik-net}
       traefik.http.routers.jellyfin.rule: "Host(`${JELLYFIN_HOST:?Définir JELLYFIN_HOST dans Komodo}`)"
-      traefik.http.routers.jellyfin.entrypoints: ${TRAEFIK_ENTRYPOINT:-websecure}
+      traefik.http.routers.jellyfin.entrypoints: "websecure"
       traefik.http.routers.jellyfin.tls: "true"
-      traefik.http.routers.jellyfin.tls.certresolver: ${TRAEFIK_CERTRESOLVER:-pki}
+      traefik.http.routers.jellyfin.tls.certresolver: "pki"
       traefik.http.routers.jellyfin.service: "jellyfin"
       traefik.http.services.jellyfin.loadbalancer.server.port: "8096"
     environment:
@@ -30,8 +30,7 @@ services:
       - type: bind
         source: ${MEDIAS_DIR:?Conserver le chemin absolu des médias existants}
         target: /media
-        # Conserver suppression de médias, sous-titres et métadonnées selon les réglages.
-        read_only: false
+        read_only: true
         bind:
           create_host_path: false
     restart: 'unless-stopped'
